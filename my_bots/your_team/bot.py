@@ -205,7 +205,7 @@ def decide(game_state: dict) -> dict:
             if facing_all_in:
                 act = {"action" : "call"} if equity >= pot_odds + call_width_modifier else passive()
 
-            elif bb_eff_chips <= 15 and bb_eff_chips >= 10:
+            elif bb_eff_chips <= 20 and bb_eff_chips >= 10:
                 all_in_thresh = bb_eff_chips * 0.007 + 0.30 if (num_raises == 0) else 0.50
                 act = {"action" : "all_in"} if equity >= all_in_thresh else passive()
 
@@ -224,6 +224,8 @@ def decide(game_state: dict) -> dict:
                     act = make_raise(big_blind * 2.5)
                 elif num_raises > 0 and equity >= call_at:
                     act = {"action" : "call"}
+                elif num_raises == 0 and is_button and owed < big_blind and equity >= 0.36: # dont fold cheap small-blinds (claude suggestion)
+                    act = {"action" : "call"}
                 else:
                     act = passive()
                 
@@ -237,8 +239,8 @@ def decide(game_state: dict) -> dict:
 
             # betting guidelines based on board state
             bet_fraction = {"flop" : 1/3, "turn" : 2/3, "river" : 2/3}
-            bet_cases = {"flop" : 0.60, "turn" : 0.65, "river" : 0.67}
-            raise_cases = {"flop" : 0.80, "turn" : 0.85, "river" : 0.83}
+            bet_cases = {"flop" : 0.60, "turn" : 0.65, "river" : 0.69}
+            raise_cases = {"flop" : 0.80, "turn" : 0.85, "river" : 0.87}
 
             # who's been aggro this street
             street_log = [a for a in game_state.get("action_log", []) if a.get("street") == street]
