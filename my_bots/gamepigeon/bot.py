@@ -205,7 +205,7 @@ def decide(game_state: dict) -> dict:
             if facing_all_in:
                 act = {"action" : "call"} if equity >= pot_odds + call_width_modifier else passive()
 
-            elif bb_eff_chips <= 20 and bb_eff_chips >= 10:
+            elif bb_eff_chips <= 20 and bb_eff_chips >= 15:
                 all_in_thresh = bb_eff_chips * 0.007 + 0.30 if (num_raises == 0) else 0.50
                 act = {"action" : "all_in"} if equity >= all_in_thresh else passive()
 
