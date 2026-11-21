@@ -149,7 +149,7 @@ def decide(game_state: dict) -> dict:
 
         return wins / max(1, iterations)
 
-    # 
+    # bluff break-even, MDF, equity to call
     def betting_threshold(bet, pot):
         pot, bet = max(1, pot), max(1, bet)
         return bet / (pot + bet), pot / (pot + bet), bet / (pot + (bet * 2))
@@ -176,10 +176,10 @@ def decide(game_state: dict) -> dict:
             val_bet_modifier = -0.05
 
         if aggression_rate > 0.5: # genuine psychopath = dont take chances
-            call_adj = -0.05
+            call_width_modifier = -0.05
 
         elif aggression_rate < 0.25 # passive player = likely have strong hands whdn they go in
-            call_adj = 0.05
+            call_width_modifier = 0.05
 
         # end of exploitation
         
