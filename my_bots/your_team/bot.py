@@ -1,4 +1,5 @@
 # TEAM GAMEPIGEON'S BOT FOR IEEE LARUS POKERBOT CONTEST 
+# 一夫当关，万付某开！
 """
 Bot template. Copy this folder to my_bots/<your_team>/ and write decide().
 
@@ -53,7 +54,7 @@ def decide(game_state: dict) -> dict:
 
     RANKS = "23456789TJQKA"
 
-    # preflop - am i gonna use this?
+    #* preflop equities table - claude generated
     PREFLOP_EQ = {
             "AA": 0.852, "AKs": 0.671, "AKo": 0.653, "AQs": 0.662, "AQo": 0.644, "AJs": 0.654, "AJo": 0.636, "ATs": 0.646,
             "ATo": 0.628, "A9s": 0.628, "A9o": 0.607, "A8s": 0.618, "A8o": 0.598, "A7s": 0.610, "A7o": 0.589, "A6s": 0.599,
@@ -81,7 +82,7 @@ def decide(game_state: dict) -> dict:
 
     # --------------------------------helpers----------------------------------- #
 
-    #! determine equity pre-flop (might b needed for time constraints - claude generated)
+    #* determine equity pre-flop (might b needed for time constraints - claude generated)
     def preflop_equity(cards):
         """Instant table lookup, e.g. ['Ah','Kh'] -> 'AKs' -> 0.671."""
         order = "AKQJT98765432"
@@ -114,7 +115,7 @@ def decide(game_state: dict) -> dict:
 
         num_acts = len(actions)
 
-        if num_acts < 20: # too small, benchmark is after 1st blind raise
+        if num_acts < 20: # too small, benchmark is after 1st blind increase
             return 0.25, 0.35, 0.05, num_acts, 0.5
 
         folds = sum(a["action"] == "fold" for a in actions)
@@ -129,7 +130,6 @@ def decide(game_state: dict) -> dict:
     def determine_equity(hand, board, max_time = 0.6, max_iterations = 5000):
         known = set(hand + board)
         deck = [eval7.Card(r + s) for r in RANKS for s in "hdsc" if r + s not in known]
-
         hand0 = [eval7.Card(c) for c in hand]
         board0 = [eval7.Card(c) for c in board]
         remaining_board = 5 - len(board0)
@@ -147,24 +147,21 @@ def decide(game_state: dict) -> dict:
               wins += 1
             elif my_cards == opp_cards:
               wins += 0.5
+
             iterations += 1
 
         return wins / max(1, iterations)
 
-    # bluff break-even, MDF, equity to call
-    def betting_threshold(bet, pot):
-        pot, bet = max(1, pot), max(1, bet)
-        return bet / (pot + bet), pot / (pot + bet), bet / (pot + (bet * 2))
-
     # -------------------------------------- end of helpers ---------------------------------- #
 
     # ---------------------game time game time (decision making) ---------------------------------#
-    if game_state.get("type") == "warmup":     # one call before hand 1; load thingame_state here if you like
+    if game_state.get("type") == "warmup":     # one call before hand 1; load things here if you like
         return {"action": "check"}
 
     try:
 
         # exploitation
+        #! fold_rate, all_in_rate, samples due to needing to reduce the scope of our bot's calculations
         fold_rate, aggression_rate, all_in_rate, samples, fold_to_bet = profile_opponent()  
         call_width_modifier = 0
 
@@ -180,21 +177,23 @@ def decide(game_state: dict) -> dict:
         pot = game_state["pot"]
         owed = game_state["amount_owed"]
         street = game_state["street"]
-        my_stack = game_state["your_stack"]
+        #!my_stack = game_state["your_stack"]
         big_blind = game_state["blinds"]["bb"]
-        ante = game_state["blinds"]["ante"]
+        #!ante = game_state["blinds"]["ante"]
         pot_odds = owed / (pot + owed)
         is_button = game_state.get("button_seat") == game_state["seat_to_act"]
 
         # preflop decision making
         if street == "preflop":
             equity = preflop_equity(cards)
+
             effective_chips = min(
                 [game_state["your_stack"] + game_state["your_bet_this_street"]]
                 + [p.get("stack", 0) + p.get("bet_this_street", 0)
                    for p in game_state.get("players", []) if p.get("seat") != game_state["seat_to_act"]
                    and p.get("state") != "folded"]
             ) # smallest chip pile is the effective one, make sure they havent folded
+
             bb_eff_chips = effective_chips / big_blind
             ranks = sorted((c[0] for c in cards), key = RANKS.index, reverse = True)
 
@@ -206,7 +205,7 @@ def decide(game_state: dict) -> dict:
             if facing_all_in:
                 act = {"action" : "call"} if equity >= pot_odds + call_width_modifier else passive()
 
-            elif bb_eff_chips <= 20 and bb_eff_chips >= 15: # all or nothing (15-20)
+            elif bb_eff_chips <= 15 and bb_eff_chips >= 10:
                 all_in_thresh = bb_eff_chips * 0.007 + 0.30 if (num_raises == 0) else 0.50
                 act = {"action" : "all_in"} if equity >= all_in_thresh else passive()
 
@@ -231,15 +230,15 @@ def decide(game_state: dict) -> dict:
         # postflop decision making
         else:
             board = game_state["community_cards"]
-            seat = game_state["seat_to_act"]
+            #!seat = game_state["seat_to_act"]
             bet = game_state["your_bet_this_street"]
             current_bet = game_state["current_bet"]
             equity = determine_equity(cards, board)
 
             # betting guidelines based on board state
-            bet_fraction = {"flop" : 1/3, "turn" : 2/3, "river" : 3/4}
-            bet_cases = {"flop" : 0.60, "turn" : 0.65, "river" : 0.70}
-            raise_cases = {"flop" : 0.80, "turn" : 0.85, "river" : 0.90}
+            bet_fraction = {"flop" : 1/3, "turn" : 2/3, "river" : 2/3}
+            bet_cases = {"flop" : 0.60, "turn" : 0.65, "river" : 0.67}
+            raise_cases = {"flop" : 0.80, "turn" : 0.85, "river" : 0.83}
 
             # who's been aggro this street
             street_log = [a for a in game_state.get("action_log", []) if a.get("street") == street]
@@ -253,27 +252,27 @@ def decide(game_state: dict) -> dict:
 
             else: # opp bet
                 me = game_state.get("your_bot_id")
-                opp_aggro = [a for a in street_log
-                             if a.get("bot_id") != me and a.get("action") in aggressive_moves]
+                opp_aggro = [a for a in street_log if a.get("bot_id") != me and a.get("action") in aggressive_moves]
                 opp_raises = len(opp_aggro)
                 facing_all_in = any(a.get("action") == "all_in" for a in opp_aggro)
                 pot_after_call = pot + owed
 
-                # equity is vs a random hand, but betting ranges are stronger:
-                # ask for more equity the more the opponent has raised this street
+                # ask for more equity the more the opp has raised this st
                 call_at = pot_odds + call_width_modifier + 0.04 * opp_raises
-                # big overbets (bet > pot) usually mean strength, tighten up a bit more
+
+                # big overbets, tighten up
                 if owed > pot - owed:
                     call_at += 0.03
+
                 # cheap price on the river, don't get bluffed off a decent hand
                 if street == "river" and pot_odds < 0.2:
                     call_at -= 0.03
 
                 raise_at = raise_cases[street] + 0.05 * max(0, opp_raises - 1)
 
-                # semi-bluff raise: drawy equity, opponent folds a lot, not on river
-                semi_bluff = (street != "river" and not facing_all_in and opp_raises == 1 
-                              and 0.35 <= equity <= 0.55 and fold_to_bet > 0.5 and random.random() < 0.2)
+                # semi-bluff raise
+                semi_bluff = (street != "river" and not facing_all_in and opp_raises == 1 and 0.35 <= equity <= 0.55 
+                              and fold_to_bet > 0.5 and random.random() < 0.2)
 
                 if facing_all_in:
                     act = {"action": "call"} if equity >= call_at else {"action": "fold"}
@@ -293,14 +292,3 @@ def decide(game_state: dict) -> dict:
     except Exception as e:
         print("error: ", repr(e))
         return passive() # passive play in case we fail idk y
-
-    """
-    if ranks[0] == ranks[1] and ranks[0] in "AKQJ":           # big pocket pair: raise
-        raise_to = max(game_state["min_raise_to"], game_state["current_bet"] + pot)
-        return {"action": "raise", "amount": raise_to}
-    if game_state["can_check"]:
-        return {"action": "check"}
-    if owed <= pot * 0.25:                                     # cheap to continue: call
-        return {"action": "call"}
-    return {"action": "fold"}
-    """
