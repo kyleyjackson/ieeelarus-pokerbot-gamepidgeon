@@ -105,7 +105,7 @@ def decide(game_state: dict) -> dict:
 
         return folds / num_acts, aggressive_moves / didnt_fold, all_ins / num_acts, num_acts
 
-    fold_rate, aggressive_moves, all_in_rate, samples = profile_opponent()
+    fold_rate, aggression_rate, all_in_rate, samples = profile_opponent()
 
     # exploitation (dhruv)
 
