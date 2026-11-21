@@ -1,3 +1,4 @@
+# TEAM GAMEPIGEON'S BOT FOR IEEE LARUS POKERBOT CONTEST 
 """
 Bot template. Copy this folder to my_bots/<your_team>/ and write decide().
 
@@ -114,7 +115,7 @@ def decide(game_state: dict) -> dict:
         num_acts = len(actions)
 
         if num_acts < 20: # too small, benchmark is after 1st blind raise
-            return 0.25, 0.35, 0.05, num_acts
+            return 0.25, 0.35, 0.05, num_acts, 0.5
 
         folds = sum(a["action"] == "fold" for a in actions)
         aggressive_moves = sum(a["action"] in ("raise", "all_in") for a in actions)
@@ -139,7 +140,8 @@ def decide(game_state: dict) -> dict:
             random_draw = random.sample(deck, remaining_board + 2)
             full_board = board0 + random_draw[:remaining_board]
             my_cards = eval7.evaluate(hand0 + full_board)
-            opp_cards = eval7.evaluate(random_draw[:remaining_board] + full_board)
+            opp_hole = random_draw[remaining_board:]
+            opp_cards = eval7.evaluate(opp_hole + full_board)
 
             if my_cards > opp_cards:
               wins += 1
@@ -163,22 +165,13 @@ def decide(game_state: dict) -> dict:
     try:
 
         # exploitation
-        fold_rate, aggression_rate, all_in_rate, samples, fold_to_bet = profile_opponent()
-        bluff_multiplier = 1.0
+        fold_rate, aggression_rate, all_in_rate, samples, fold_to_bet = profile_opponent()  
         call_width_modifier = 0
-        val_bet_modifier = 0
 
-        if fold_rate > 0.75: # opp folds a lot = bluff more!
-            bluff_multiplier = 1.5
-
-        elif fold_rate < # calling station = mayb dont bluff, thin bets
-            bluff_multiplier = 0.5
-            val_bet_modifier = -0.05
-
-        if aggression_rate > 0.5: # genuine psychopath = dont take chances
+        if aggression_rate > 0.5: # genuine psychopath 
             call_width_modifier = -0.05
 
-        elif aggression_rate < 0.25 # passive player = likely have strong hands whdn they go in
+        elif aggression_rate < 0.25: # passive player
             call_width_modifier = 0.05
 
         # end of exploitation
@@ -192,20 +185,111 @@ def decide(game_state: dict) -> dict:
         ante = game_state["blinds"]["ante"]
         pot_odds = owed / (pot + owed)
         is_button = game_state.get("button_seat") == game_state["seat_to_act"]
-        debug = {"opp": [round(fold_rate, 2), round(aggression_rate, 2), samples]}
 
         # preflop decision making
         if street == "preflop":
             equity = preflop_equity(cards)
-            effective_chips = min(my_stack + game_state["your_bet_this_street"],  )
+            effective_chips = min(
+                [game_state["your_stack"] + game_state["your_bet_this_street"]]
+                + [p.get("stack", 0) + p.get("bet_this_street", 0)
+                   for p in game_state.get("players", []) if p.get("seat") != game_state["seat_to_act"]
+                   and p.get("state") != "folded"]
+            ) # smallest chip pile is the effective one, make sure they havent folded
+            bb_eff_chips = effective_chips / big_blind
+            ranks = sorted((c[0] for c in cards), key = RANKS.index, reverse = True)
 
+            # reading moves
+            log = [a for a in game_state.get("action_log", []) if a.get("street") == "preflop"]
+            num_raises = sum(1 for a in log if a.get("action") in ("raise", "all_in"))
+            facing_all_in = any(a.get("action") == "all_in" for a in log)
 
+            if facing_all_in:
+                act = {"action" : "call"} if equity >= pot_odds + call_width_modifier else passive()
 
+            elif bb_eff_chips <= 20 and bb_eff_chips >= 15: # all or nothing (15-20)
+                all_in_thresh = bb_eff_chips * 0.007 + 0.30 if (num_raises == 0) else 0.50
+                act = {"action" : "all_in"} if equity >= all_in_thresh else passive()
+
+            else:
+                if num_raises == 0:
+                    raise_at = 0.45 if is_button else 0.60
+
+                else:
+                    raise_at = {1: 0.60, 2: 0.70}.get(num_raises, 0.75)
+
+                call_at = pot_odds + 0.05 * num_raises + call_width_modifier
+                suited = cards[0][1] == cards[1][1]
+                bluff = suited and "A" in ranks and bool(set(ranks) & set("2345")) and num_raises <= 1 and random.random() < 0.3
+
+                if equity >= raise_at or bluff:
+                    act = make_raise(big_blind * 2.5)
+                elif num_raises > 0 and equity >= call_at:
+                    act = {"action" : "call"}
+                else:
+                    act = passive()
+                
         # postflop decision making
         else:
+            board = game_state["community_cards"]
+            seat = game_state["seat_to_act"]
+            bet = game_state["your_bet_this_street"]
+            current_bet = game_state["current_bet"]
+            equity = determine_equity(cards, board)
 
+            # betting guidelines based on board state
+            bet_fraction = {"flop" : 1/3, "turn" : 2/3, "river" : 3/4}
+            bet_cases = {"flop" : 0.60, "turn" : 0.65, "river" : 0.70}
+            raise_cases = {"flop" : 0.80, "turn" : 0.85, "river" : 0.90}
 
+            # who's been aggro this street
+            street_log = [a for a in game_state.get("action_log", []) if a.get("street") == street]
+            aggressive_moves = ("raise", "all_in")
 
+            if game_state.get("can_check"):
+                if equity >= bet_cases[street]:
+                    act = make_raise(bet + bet_fraction[street] * pot)
+                else:
+                    act = passive()
+
+            else: # opp bet
+                me = game_state.get("your_bot_id")
+                opp_aggro = [a for a in street_log
+                             if a.get("bot_id") != me and a.get("action") in aggressive_moves]
+                opp_raises = len(opp_aggro)
+                facing_all_in = any(a.get("action") == "all_in" for a in opp_aggro)
+                pot_after_call = pot + owed
+
+                # equity is vs a random hand, but betting ranges are stronger:
+                # ask for more equity the more the opponent has raised this street
+                call_at = pot_odds + call_width_modifier + 0.04 * opp_raises
+                # big overbets (bet > pot) usually mean strength, tighten up a bit more
+                if owed > pot - owed:
+                    call_at += 0.03
+                # cheap price on the river, don't get bluffed off a decent hand
+                if street == "river" and pot_odds < 0.2:
+                    call_at -= 0.03
+
+                raise_at = raise_cases[street] + 0.05 * max(0, opp_raises - 1)
+
+                # semi-bluff raise: drawy equity, opponent folds a lot, not on river
+                semi_bluff = (street != "river" and not facing_all_in and opp_raises == 1 
+                              and 0.35 <= equity <= 0.55 and fold_to_bet > 0.5 and random.random() < 0.2)
+
+                if facing_all_in:
+                    act = {"action": "call"} if equity >= call_at else {"action": "fold"}
+
+                elif equity >= raise_at or semi_bluff:
+                    raise_to = current_bet + bet_fraction[street] * pot_after_call
+                    act = make_raise(raise_to)
+
+                elif equity >= call_at:
+                    act = {"action": "call"}
+
+                else:
+                    act = passive()
+
+        return act
+    
     except Exception as e:
         print("error: ", repr(e))
         return passive() # passive play in case we fail idk y
